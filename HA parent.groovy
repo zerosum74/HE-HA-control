@@ -90,6 +90,8 @@ import groovy.json.JsonOutput
 metadata {
     definition (name: "HomeAssistant Hub Parent", namespace: "ymerj", author: "Yves Mercier", importUrl: "https://raw.githubusercontent.com/ymerj/HE-HA-control/main/HA%20parent.groovy") {
         capability "Initialize"
+	capability "Switch"
+        capability "Actuator"
 
         command "closeConnection"        
 
@@ -160,6 +162,7 @@ def webSocketStatus(String status){
     if ((status == "status: closing") && (state.wasExpectedClose)) {
         state.wasExpectedClose = false
         sendEvent(name: "Connection", value: "Closed")
+	sendEvent(name: "switch", value: "off")
         return
     } 
     else if(status == 'status: open') {
@@ -169,19 +172,29 @@ def webSocketStatus(String status){
         state.reconnectDelay = 1
         state.wasExpectedClose = false
         sendEvent(name: "Connection", value: "Open")
+	sendEvent(name: "switch", value: "on")
     } 
     else {
         log.warn "WebSocket error, reconnecting."
         sendEvent(name: "Connection", value: "Reconnecting")
+	sendEvent(name: "switch", value: "off")
         reconnectWebSocket()
     }
+}
+
+def on() {
+    sendEvent(name: "switch", value: "on")
+}
+
+def off() {
+    sendEvent(name: "switch", value: "off")
 }
 
 def reconnectWebSocket() {
     // first delay is 2 seconds, doubles every time
     state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
     // don't let delay get too crazy, max it out at 10 minutes
-    if(state.reconnectDelay > 600) state.reconnectDelay = 600
+    if(state.reconnectDelay > 60) state.reconnectDelay = 60
 
     //If the Home Assistant Hub is offline, give it some time before trying to reconnect
     runIn(state.reconnectDelay, initialize)
@@ -343,8 +356,8 @@ def parse(String description) {
                 def target_temperature = newState?.attributes?.temperature
                 def fan_mode = newState?.attributes?.fan_mode
                 def thermostat_mode = newState?.state
-            	def target_temp_high = newState?.attributes?.target_temp_high
-                def target_temp_low = newState?.attributes?.target_temp_low
+            	//def target_temp_high = newState?.attributes?.target_temp_high
+                //def target_temp_low = newState?.attributes?.target_temp_low
                 switch (fan_mode)
                 {
                     case "off":
@@ -368,7 +381,7 @@ def parse(String description) {
                        return
                 }
                 newVals[0] = thermostat_mode
-                newVals += [current_temperature, target_temperature, fan_mode, hvac_action, target_temp_high, target_temp_low]
+                newVals += [current_temperature, target_temperature, fan_mode, hvac_action]
                 mapping = translateDevices(domain, newVals, friendly, origin)
                 if (newVals[0] == "off") //remove updates not provided with the HA 'off' event json data
                    {
@@ -471,7 +484,7 @@ def translateDevices(domain, newVals, friendly, origin)
             switch: [type: "Generic Component Switch",                  event: [[name: "switch", value: newVals[0], type: origin, descriptionText:"${friendly} was turned ${newVals[0]} [${origin}]"]]],
             device_tracker: [type: "Generic Component Presence Sensor", event: [[name: "presence", value: newVals[0] == "home" ? "present":"not present", descriptionText:"${friendly} is updated"]], namespace: "community"],
             lock: [type: "Generic Component Lock",                      event: [[name: "lock", value: newVals[0] ?: "unknown", type: origin, descriptionText:"${friendly} was turned ${newVals[0]} [${origin}]"]]],
-            climate: [type: "Generic Component Thermostat",             event: [[name: "thermostatMode", value: newVals[0], descriptionText: "${friendly} is set to ${newVals[0]}"],[name: "temperature", value: newVals[1], descriptionText: "${friendly}'s current temperature is ${newVals[1]} degree"],[name: "coolingSetpoint", value: newVals[2], descriptionText: "${friendly}'s cooling temperature is set to ${newVals[2]} degree"],[name: "heatingSetpoint", value: newVals[2], descriptionText: "${friendly}'s heating temperature is set to ${newVals[2]} degree"],[name: "thermostatFanMode", value: newVals[3], descriptionText: "${friendly}'s fan is set to ${newVals[3]}"],[name: "thermostatSetpoint", value: newVals[2], descriptionText: "${friendly}'s temperature is set to ${newVals[2]} degree"],[name: "thermostatOperatingState", value: newVals[4], descriptionText: "${friendly}'s mode is ${newVals[4]}"],[name: "coolingSetpoint", value: newVals[5], descriptionText: "${friendly}'s cooling temperature is set to ${newVals[5]} degrees"],[name: "heatingSetpoint", value: newVals[6], descriptionText: "${friendly}'s heating temperature is set to ${newVals[6]} degrees"]]],
+            climate: [type: "Generic Component Thermostat",             event: [[name: "thermostatMode", value: newVals[0], descriptionText: "${friendly} is set to ${newVals[0]}"],[name: "temperature", value: newVals[1], descriptionText: "${friendly}'s current temperature is ${newVals[1]} degree"], [name: "coolingSetpoint", value: newVals[2], descriptionText: "${friendly}'s cooling temperature is set to ${newVals[2]} degree"], [name: "heatingSetpoint", value: newVals[2], descriptionText: "${friendly}'s heating temperature is set to ${newVals[2]} degree"],[name: "thermostatFanMode", value: newVals[3], descriptionText: "${friendly}'s fan is set to ${newVals[3]}"],[name: "thermostatSetpoint", value: newVals[2], descriptionText: "${friendly}'s temperature is set to ${newVals[2]} degree"],[name: "thermostatOperatingState", value: newVals[4], descriptionText: "${friendly}'s mode is ${newVals[4]}"]]],
             input_boolean: [type: "Generic Component Switch",           event: [[name: "switch", value: newVals[0], type: origin, descriptionText:"${friendly} was turned ${newVals[0]} [${origin}]"]]],
             input_number: [type: "Generic Component Number",            event: [[name: "number", value: newVals[0], unit: newVals[1] ?: "", type: origin, descriptionText:"${friendly} was set to ${newVals[0]} ${newVals[1] ?: ''} [${origin}]"],[name: "minimum", value: newVals[2], descriptionText:"${friendly} minimum value is ${newVals[2]}"],[name: "maximum", value: newVals[3], descriptionText:"${friendly} maximum value is ${newVals[3]}"],[name: "step", value: newVals[4], descriptionText:"${friendly} step is ${newVals[4]}"]], namespace: "community"],
             number: [type: "Generic Component Number",                  event: [[name: "number", value: newVals[0], unit: newVals[1] ?: "", type: origin, descriptionText:"${friendly} was set to ${newVals[0]} ${newVals[1] ?: ''} [${origin}]"],[name: "minimum", value: newVals[2], descriptionText:"${friendly} minimum value is ${newVals[2]}"],[name: "maximum", value: newVals[3], descriptionText:"${friendly} maximum value is ${newVals[3]}"],[name: "step", value: newVals[4], descriptionText:"${friendly} step is ${newVals[4]}"]], namespace: "community"],
